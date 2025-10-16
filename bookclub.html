@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Club Ratings Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN for the line graph -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+        }
+        .rating-chip {
+            min-width: 4rem; /* Ensure chips have a decent touch target size */
+            height: 2.5rem;
+        }
+        .summary-card-value {
+            line-height: 1;
+            font-size: 2.5rem; /* Larger font for mobile readability */
+        }
+        .highlight-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        /* Custom scrollbar for desktop look */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+    </style>
+</head>
+<body class="p-4 sm:p-6 md:p-8 min-h-screen">
+
+    <div id="app" class="max-w-4xl mx-auto">
+        <header class="mb-8 text-center">
+            <h1 class="text-4xl font-extrabold text-indigo-700">Book Club Archive</h1>
+            <p class="text-lg text-gray-600 mt-2">Ratings and Analysis from B, JW, JN, and O</p>
+        </header>
+
+        <!-- Summary Dashboard (User Averages) -->
+        <section class="bg-white p-6 rounded-xl shadow-lg mb-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">User Performance Summary</h2>
+            <div id="summary-dashboard" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <!-- User average cards will be injected here -->
+            </div>
+            <p class="text-sm text-gray-500 italic mt-4 pt-4 border-t">*Averages calculated only from available numerical ratings (excluding skips, N/A, TBC).</p>
+        </section>
+
+        <!-- Highlights & Analysis Section -->
+        <section class="bg-white p-6 rounded-xl shadow-lg mb-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">Highlights & Analysis</h2>
+            
+            <div id="highlights-container" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- User Favorites/Least Favorites Cards -->
+                <div id="user-analysis" class="space-y-4">
+                    <!-- Cards will be injected here -->
+                </div>
+
+                <!-- Divisiveness Analysis Cards -->
+                <div class="space-y-6">
+                    <!-- Most Divisive -->
+                    <div id="most-divisive-card" class="p-4 bg-red-50 rounded-lg border border-red-200">
+                        <h3 class="highlight-title text-red-700 mb-2">Most Divisive Reads (Largest Range)</h3>
+                        <!-- Content injected here -->
+                    </div>
+                    <!-- Least Divisive -->
+                    <div id="least-divisive-card" class="p-4 bg-green-50 rounded-lg border border-green-200">
+                        <h3 class="highlight-title text-green-700 mb-2">Least Divisive Reads (Smallest Range)</h3>
+                         <!-- Content injected here -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Line Graph Section -->
+        <section class="bg-white p-6 rounded-xl shadow-lg mb-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">User Ratings Over Time</h2>
+            <div class="h-96 w-full">
+                <canvas id="ratings-chart"></canvas>
+            </div>
+        </section>
+
+        <!-- Book List and Search -->
+        <section class="bg-white p-6 rounded-xl shadow-lg">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">Book History</h2>
+            <input type="text" id="book-search" placeholder="Search book titles..."
+                   class="w-full p-3 mb-6 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+            
+            <div id="book-list" class="space-y-6">
+                <!-- Book cards will be injected here -->
+            </div>
+            <div id="no-results" class="hidden text-center text-gray-500 mt-8 p-4 border rounded-lg">
+                No books match your search.
+            </div>
+        </section>
+        
+        <!-- Modal for comments -->
+        <div id="comment-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center p-4 z-50 transition-opacity" onclick="closeModal(event)">
+            <div class="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6" onclick="event.stopPropagation()">
+                <div class="flex justify-between items-center border-b pb-3 mb-4">
+                    <h3 id="modal-title" class="text-xl font-semibold text-indigo-600">Book Notes</h3>
+                    <button class="text-gray-400 hover:text-gray-600" onclick="closeModal()">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <p id="modal-content" class="text-gray-700 leading-relaxed"></p>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Data Definition (Parsed from User Input) ---
+        const initialBookData = [
+            // id is the meeting number
+            { id: 1, title: "Formation Meeting, Eastside, Imperial College London", B: null, JW: null, JN: null, O: null, comment: null, skip: true },
+            { id: 2, title: "The Collector", B: 7, JW: 5, JN: 7, O: 6, comment: null },
+            { id: 3, title: "Hemingway", B: 3, JW: 2, JN: 3.5, O: 2, comment: null },
+            { id: 4, title: "Americanah", B: 7, JW: null, JN: 8, O: 7, comment: 'JW: N/A' },
+            { id: 5, title: "Lavender Road", B: 2, JW: 9, JN: 1.5, O: 1, comment: null },
+            { id: 6, title: "Geek Love", B: 9, JW: 4, JN: 5, O: 7, comment: null },
+            { id: 7, title: "The Midwich Cuckoos", B: 7, JW: 7, JN: 7, O: 7, comment: null },
+            { id: 8, title: "The Girls", B: 7, JW: null, JN: 6, O: 6.5, comment: 'JW: N/A' },
+            { id: 9, title: "Donnie Brasco", B: 6, JW: 7, JN: 5.5, O: 6.5, comment: null },
+            { id: 10, title: "The Lost Continent", B: 7, JW: 6.5, JN: 7, O: 7, comment: null },
+            { id: 11, title: "Noise of Time", B: 6, JW: 5, JN: 6, O: 4.5, comment: "O: self-gratify" },
+            { id: 12, title: "The Bluest Eye", B: 6.5, JW: 4, JN: 6, O: 6, comment: null },
+            { id: 13, title: "Two Brothers", B: 4, JW: 6, JN: 2.5, O: 4, comment: null },
+            { id: 14, title: "The Power", B: 6, JW: 7, JN: 6, O: 5.5, comment: null },
+            { id: 15, title: "Survivor", B: 4.5, JW: 3, JN: 2.5, O: 3, comment: null },
+            { id: 16, title: "Harry Quebert", B: 9.5, JW: 7, JN: 8, O: 8.5, comment: null },
+            { id: 17, title: "Tom Hanks", B: 7, JW: 6, JN: 6.5, O: 6.5, comment: "JN: Rating was marked with an asterisk." },
+            { id: 18, title: "Any Human Heart", B: 9.5, JW: 6, JN: null, O: 8, comment: 'JN: TBC' },
+            { id: 19, title: "Everything Is Illuminated", B: 2.5, JW: null, JN: null, O: 2.5, comment: 'JW/JN: TBC' },
+            { id: 20, title: "[SKIP]", B: null, JW: null, JN: null, O: null, comment: 'A skipped meeting', skip: true },
+            { id: 21, title: "Lullaby", B: 5, JW: 5, JN: 5, O: 5.5, comment: null },
+            { id: 22, title: "The Colour Of Bee Larkham’s Murder", B: 7.5, JW: null, JN: null, O: 6.75, comment: 'JW/JN: Missing ratings' },
+            { id: 23, title: "Educated", B: 10, JW: 8.5, JN: 7.5, O: 9, comment: null },
+            { id: 24, title: "Home Fire", B: 6, JW: 6.5, JN: null, O: 5.5, comment: 'JN: Missing rating' },
+            { id: 25, title: "Normal People", B: 7.5, JW: 7, JN: 8.5, O: 9.5, comment: null },
+            { id: 26, title: "Where The Crawdads Sing", B: 8.5, JW: 9.5, JN: 9.5, O: 8.5, comment: "NB: JN didn’t recall this was a book club book and then tried to recommend it to the entire group." },
+            { id: 27, title: "OMG, What An Aisling", B: 5, JW: null, JN: 5.5, O: 6.5, comment: 'JW: Missing rating' },
+            { id: 28, title: "The Falconer", B: 10, JW: null, JN: 6, O: 8.75, comment: "JN: Rated approximately 18 months later after substantial quantities of toffee vodka." },
+            { id: 29, title: "The Familiars", B: 3.5, JW: 5, JN: 5, O: 2.5, comment: null },
+            { id: 30, title: "The Memory Tree", B: 7.5, JW: 5, JN: 3, O: 3.75, comment: null },
+            { id: 31, title: "Before The Coffee Gets Cold", B: 7.5, JW: null, JN: 6, O: 5.5, comment: 'JW: TBC' },
+            { id: 32, title: "Mr. Splitfoot", B: 6, JW: null, JN: 5, O: 4.5, comment: 'JW: TBC' },
+            { id: 33, title: "There Eyes Were Watching God", B: 4.5, JW: null, JN: null, O: 3, comment: 'JW/JN: Missing ratings' },
+            { id: 34, title: "Thursday Murder", B: 9, JW: 8, JN: 8.5, O: 7, comment: null },
+            { id: 35, title: "Insatiable", B: 3, JW: 1, JN: 2.5, O: 2, comment: null },
+            { id: 36, title: "The Humans", B: 7, JW: null, JN: 6.5, O: 4, comment: 'JW: Missing rating' },
+            { id: 37, title: "Evelyn Hugo", B: 7.5, JW: 8, JN: 8, O: 7.5, comment: null },
+            { id: 38, title: "How To Kill Your Family", B: 7, JW: null, JN: 6.5, O: 5, comment: 'JW: *gave birth (Reason for N/A)' },
+            { id: 39, title: "Tomorrow And Tomorrow And Tomorrow", B: 9, JW: null, JN: 6.5, O: 8.5, comment: 'JW: *moving house (Reason for N/A)' },
+            { id: 40, title: "Mother Thing", B: 8, JW: null, JN: 3.5, O: 7, comment: 'JW: Missing rating' },
+            { id: 41, title: "Good Material", B: 9, JW: 9, JN: 8, O: 8, comment: null },
+            { id: 42, title: "Wedding of the Year", B: 6.5, JW: 7, JN: null, O: null, comment: 'JN/O: Missing ratings' },
+            { id: 43, title: "Babysitter", B: 3, JW: 5, JN: null, O: 5.5, comment: 'JN: Missing rating' },
+            { id: 44, title: "The Constant Rabbit", B: null, JW: null, JN: null, O: null, comment: 'Next Meeting/Upcoming Book', next: true },
+        ];
+
+        // --- Constants and User List ---
+        const USER_KEYS = ['B', 'JW', 'JN', 'O'];
+
+        // --- Utility Functions for Calculation ---
+
+        /**
+         * Safely converts rating to number, returning 0 or null if invalid.
+         * @param {number|string|null} rating
+         * @returns {number|null}
+         */
+        const parseRating = (rating) => {
+            if (typeof rating === 'number') return rating;
+            if (typeof rating === 'string') {
+                const num = parseFloat(rating.toString().replace('*', ''));
+                return isNaN(num) ? null : num;
+            }
+            return null;
+        };
+
+        /**
+         * Calculates the average rating for a single book.
+         * @param {object} book
+         * @returns {string|null} Formatted average or null.
+         */
+        const calculateBookAverage = (book) => {
+            if (book.skip || book.next) return null;
+            let total = 0;
+            let count = 0;
+            
+            USER_KEYS.forEach(key => {
+                const rating = parseRating(book[key]);
+                if (rating !== null) {
+                    total += rating;
+                    count++;
+                }
+            });
+
+            return count > 0 ? (total / count).toFixed(2) : null;
+        };
+        
+        /**
+         * Calculates the average rating for a specific user across all non-skip books.
+         * @param {string} userKey - 'B', 'JW', 'JN', or 'O'.
+         * @returns {string} Formatted average.
+         */
+        const calculateUserAverage = (userKey) => {
+            let total = 0;
+            let count = 0;
+
+            initialBookData.filter(b => !b.skip && !b.next).forEach(book => {
+                const rating = parseRating(book[userKey]);
+                if (rating !== null) {
+                    total += rating;
+                    count++;
+                }
+            });
+
+            return count > 0 ? (total / count).toFixed(2) : "N/A";
+        };
+
+        /**
+         * Calculates the overall average rating for all users across all non-skip books.
+         * @returns {string} Formatted overall average.
+         */
+        const calculateOverallAverage = () => {
+            let grandTotal = 0;
+            let grandCount = 0;
+
+            initialBookData.filter(b => !b.skip && !b.next).forEach(book => {
+                let bookTotal = 0;
+                let bookCount = 0;
+
+                USER_KEYS.forEach(key => {
+                    const rating = parseRating(book[key]);
+                    if (rating !== null) {
+                        bookTotal += rating;
+                        bookCount++;
+                    }
+                });
+                
+                grandTotal += bookTotal;
+                grandCount += bookCount;
+            });
+
+            return grandCount > 0 ? (grandTotal / grandCount).toFixed(2) : "N/A";
+        };
+
+        /**
+         * Calculates the favorite, least favorite, most divisive, and least divisive books.
+         */
+        const calculateHighlights = () => {
+            let userHighlights = {};
+            const divisiveness = [];
+            const validBooks = initialBookData.filter(b => !b.skip && !b.next);
+
+            // 1. User Favorites/Least Favorites
+            USER_KEYS.forEach(user => {
+                let maxRating = -1;
+                let minRating = 11;
+                let favorites = [];
+                let leastFavorites = [];
+
+                validBooks.forEach(book => {
+                    const rating = parseRating(book[user]);
+                    if (rating !== null) {
+                        if (rating > maxRating) {
+                            maxRating = rating;
+                            favorites = [{ title: book.title, rating }];
+                        } else if (rating === maxRating) {
+                            favorites.push({ title: book.title, rating });
+                        }
+
+                        if (rating < minRating) {
+                            minRating = rating;
+                            leastFavorites = [{ title: book.title, rating }];
+                        } else if (rating === minRating) {
+                            leastFavorites.push({ title: book.title, rating });
+                        }
+                    }
+                });
+                
+                userHighlights[user] = {
+                    favorite: favorites.length > 0 ? { title: favorites.map(f => f.title).join(' & '), rating: maxRating } : null,
+                    leastFavorite: leastFavorites.length > 0 ? { title: leastFavorites.map(f => f.title).join(' & '), rating: minRating } : null
+                };
+            });
+
+            // 2. Divisiveness (Range)
+            validBooks.forEach(book => {
+                const ratings = USER_KEYS.map(key => parseRating(book[key])).filter(r => r !== null);
+                
+                if (ratings.length >= 2) {
+                    const max = Math.max(...ratings);
+                    const min = Math.min(...ratings);
+                    const range = parseFloat((max - min).toFixed(2));
+
+                    divisiveness.push({
+                        id: book.id,
+                        title: book.title,
+                        range: range,
+                        max: max,
+                        min: min,
+                        count: ratings.length
+                    });
+                }
+            });
+
+            // Sort for most divisive (highest range)
+            divisiveness.sort((a, b) => b.range - a.range || a.title.localeCompare(b.title));
+
+            const mostDivisive = divisiveness.slice(0, 3);
+            
+            // Sort for least divisive (lowest range, must have at least 2 ratings)
+            const nonZeroDivisive = divisiveness.filter(d => d.range >= 0).sort((a, b) => a.range - b.range || a.title.localeCompare(b.title));
+            const leastDivisive = nonZeroDivisive.length > 0 ? nonZeroDivisive.slice(0, 3) : [];
+
+            return { userHighlights, mostDivisive, leastDivisive };
+        };
+
+
+        // --- Rendering Functions ---
+
+        /**
+         * Determines the Tailwind color class for a user's rating chip.
+         * @param {string} userKey
+         * @returns {string} Tailwind class string.
+         */
+        const getUserColor = (userKey) => {
+            const colors = {
+                'B': 'bg-pink-100 text-pink-700 border-pink-200',
+                'JW': 'bg-teal-100 text-teal-700 border-teal-200',
+                'JN': 'bg-amber-100 text-amber-700 border-amber-200',
+                'O': 'bg-sky-100 text-sky-700 border-sky-700',
+            };
+            return colors[userKey] || 'bg-gray-100 text-gray-700 border-gray-200';
+        };
+
+        /**
+         * Renders the user average summary dashboard. (Unchanged from v1)
+         */
+        const renderSummaryDashboard = () => {
+            const container = document.getElementById('summary-dashboard');
+            if (!container) return;
+            container.innerHTML = '';
+            
+            const usersAndOverall = [
+                ...USER_KEYS.map(key => ({ 
+                    key, 
+                    label: key, 
+                    avg: calculateUserAverage(key), 
+                    color: getUserColor(key) 
+                })),
+                { key: 'Overall', label: 'Club Average', avg: calculateOverallAverage(), color: 'bg-green-100 text-green-700' }
+            ];
+
+            usersAndOverall.forEach(({ label, avg, color }) => {
+                const card = `
+                    <div class="p-4 bg-gray-50 rounded-xl border border-gray-200 text-center transition duration-200 hover:shadow-md">
+                        <p class="text-sm font-medium text-gray-500">${label}</p>
+                        <p class="summary-card-value font-bold mt-1 ${label === 'Club Average' ? 'text-green-600' : 'text-indigo-600'}">${avg}</p>
+                    </div>
+                `;
+                container.innerHTML += card;
+            });
+        };
+
+        /**
+         * Renders the Highlights and Analysis section.
+         */
+        const renderHighlights = () => {
+            const { userHighlights, mostDivisive, leastDivisive } = calculateHighlights();
+            const userContainer = document.getElementById('user-analysis');
+            const divisiveCard = document.getElementById('most-divisive-card');
+            const leastDivisiveCard = document.getElementById('least-divisive-card');
+
+            if (!userContainer || !divisiveCard || !leastDivisiveCard) return;
+
+            // --- 1. User Favorites/Least Favorites ---
+            userContainer.innerHTML = '';
+            USER_KEYS.forEach(user => {
+                const highlight = userHighlights[user];
+                const colorClass = getUserColor(user).split(' ').filter(c => c.startsWith('bg-') || c.startsWith('text-')).join(' ');
+
+                const userCard = `
+                    <div class="p-4 rounded-xl border-2 ${colorClass.replace('bg-', 'bg-').replace('text-', 'border-')} shadow-sm">
+                        <h4 class="text-lg font-bold ${colorClass.split(' ').find(c => c.startsWith('text-'))}">${user}'s Preferences</h4>
+                        <div class="mt-2 space-y-2 text-sm text-gray-700">
+                            ${highlight.favorite ? `
+                                <div>
+                                    <span class="font-bold text-green-600">Favorite (${highlight.favorite.rating}/10):</span> 
+                                    ${highlight.favorite.title}
+                                </div>` : ''}
+                            ${highlight.leastFavorite ? `
+                                <div>
+                                    <span class="font-bold text-red-600">Least Favorite (${highlight.leastFavorite.rating}/10):</span> 
+                                    ${highlight.leastFavorite.title}
+                                </div>` : ''}
+                        </div>
+                    </div>
+                `;
+                userContainer.innerHTML += userCard;
+            });
+
+            // --- 2. Most Divisive Books ---
+            const renderDivisiveList = (books) => {
+                if (books.length === 0) return '<p class="text-sm text-gray-600">Need more ratings to calculate divisiveness.</p>';
+                return books.map(book => `
+                    <p class="text-sm">
+                        <span class="font-semibold">${book.title}</span> 
+                        (Range: ${book.range.toFixed(1)}, ${book.min.toFixed(1)} to ${book.max.toFixed(1)})
+                    </p>
+                `).join('');
+            };
+
+            divisiveCard.querySelector('h3').insertAdjacentHTML('afterend', `
+                <div class="mt-2 space-y-1 text-red-800">${renderDivisiveList(mostDivisive)}</div>
+            `);
+
+            // --- 3. Least Divisive Books ---
+            leastDivisiveCard.querySelector('h3').insertAdjacentHTML('afterend', `
+                <div class="mt-2 space-y-1 text-green-800">${renderDivisiveList(leastDivisive)}</div>
+            `);
+        };
+
+        /**
+         * Renders the line graph using Chart.js.
+         */
+        const renderLineGraph = () => {
+            const validBooks = initialBookData.filter(b => !b.skip && !b.next);
+            const bookLabels = validBooks.map(b => b.id);
+
+            const datasets = USER_KEYS.map(user => {
+                const data = initialBookData.map(book => {
+                    const rating = parseRating(book[user]);
+                    return {
+                        x: book.id,
+                        y: rating
+                    };
+                }).filter(point => point.x >= 2); // Start from book 2
+                
+                const colorMap = {
+                    'B': '#db2777', // Pink 600
+                    'JW': '#0d9488', // Teal 600
+                    'JN': '#f59e0b', // Amber 600
+                    'O': '#0284c7', // Sky 600
+                };
+
+                return {
+                    label: user,
+                    data: data,
+                    borderColor: colorMap[user],
+                    backgroundColor: colorMap[user] + '40',
+                    fill: false,
+                    tension: 0.1,
+                    pointRadius: 5,
+                    pointHoverRadius: 7,
+                    borderWidth: 3,
+                    spanGaps: true // Ensures line does not connect across null values
+                };
+            });
+            
+            const ctx = document.getElementById('ratings-chart').getContext('2d');
+            
+            if (window.bookClubChart) {
+                window.bookClubChart.destroy();
+            }
+
+            window.bookClubChart = new Chart(ctx, {
+                type: 'line',
+                data: { datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'nearest', intersect: false, axis: 'x' },
+                    plugins: {
+                        title: { display: true, text: 'Individual User Ratings Over Time (Book ID)', font: { size: 18 } },
+                        legend: { position: 'top', labels: { usePointStyle: true, font: { size: 14 } } },
+                        tooltip: {
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    const bookId = tooltipItems[0].parsed.x;
+                                    const bookData = initialBookData.find(b => b.id === bookId);
+                                    return `${bookId}. ${bookData ? bookData.title : 'Book'}`;
+                                },
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) { label += ': '; }
+                                    if (context.parsed.y !== null) {
+                                        label += context.parsed.y.toFixed(1) + '/10';
+                                    } else {
+                                        label += 'N/A';
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear', 
+                            min: 2, 
+                            max: 44, 
+                            ticks: {
+                                stepSize: 5,
+                                callback: function(value) {
+                                    return bookLabels.includes(value) ? value : ''; 
+                                }
+                            },
+                            title: { display: true, text: 'Book Club Meeting Number' }
+                        },
+                        y: {
+                            min: 0,
+                            max: 10,
+                            title: { display: true, text: 'Rating (0-10)' }
+                        }
+                    }
+                }
+            });
+        };
+
+        /**
+         * Renders the detailed book list based on search term. (Unchanged from v1)
+         * @param {string} searchTerm
+         */
+        const renderBookList = (searchTerm = '') => {
+            const container = document.getElementById('book-list');
+            const noResults = document.getElementById('no-results');
+            if (!container) return;
+            
+            container.innerHTML = '';
+            const normalizedSearchTerm = searchTerm.toLowerCase().trim();
+
+            const filteredBooks = initialBookData.filter(book => 
+                book.title.toLowerCase().includes(normalizedSearchTerm)
+            );
+            
+            if (filteredBooks.length === 0) {
+                container.innerHTML = '';
+                noResults.classList.remove('hidden');
+                return;
+            } else {
+                noResults.classList.add('hidden');
+            }
+            
+            filteredBooks.forEach(book => {
+                const bookAvg = calculateBookAverage(book);
+                const hasComments = book.comment && book.comment.trim() !== '';
+
+                let mainContent;
+                if (book.skip || book.id === 1) {
+                    mainContent = `
+                        <div class="text-center py-4 bg-gray-100 rounded-lg">
+                            <p class="text-xl font-semibold text-gray-500">${book.title}</p>
+                            <p class="text-sm text-gray-400 mt-1">${book.comment || 'No Book Selected'}</p>
+                        </div>
+                    `;
+                } else if (book.next) {
+                    mainContent = `
+                        <div class="text-center py-4 bg-indigo-50 rounded-lg border-2 border-indigo-300 border-dashed">
+                            <p class="text-xl font-semibold text-indigo-700">${book.title}</p>
+                            <p class="text-sm text-indigo-500 mt-1">Upcoming Meeting (Ratings TBC)</p>
+                        </div>
+                    `;
+                } else {
+                    // Regular Book Card Content
+                    const ratingChips = USER_KEYS.map(key => {
+                        const rating = book[key];
+                        const displayRating = rating === null ? 'N/A' : parseRating(rating).toFixed(1);
+                        const color = getUserColor(key);
+                        
+                        return `
+                            <div class="rating-chip flex flex-col items-center justify-center p-1 rounded-lg border text-xs font-semibold ${color} shadow-sm">
+                                <span class="font-bold text-base">${displayRating}</span>
+                                <span class="text-xs -mt-1">${key}</span>
+                            </div>
+                        `;
+                    }).join('');
+
+                    mainContent = `
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <!-- Ratings Chips -->
+                            <div class="flex-grow grid grid-cols-4 gap-2">
+                                ${ratingChips}
+                            </div>
+                            
+                            <!-- Average and Comment Button -->
+                            <div class="flex-shrink-0 flex items-center gap-3 mt-3 sm:mt-0">
+                                <div class="p-2 bg-indigo-500 text-white rounded-lg text-center font-bold min-w-[5rem] shadow-md">
+                                    <span class="text-xs block opacity-80">Avg.</span>
+                                    <span class="text-lg block">${bookAvg || 'N/A'}</span>
+                                </div>
+                                ${hasComments ? `
+                                    <button onclick="openModal('${book.title}', \`${book.comment.replace(/'/g, "\\'")}\`)" 
+                                            class="p-3 bg-amber-500 text-white rounded-full transition duration-150 hover:bg-amber-600 focus:outline-none focus:ring-4 focus:ring-amber-300 shadow-md flex items-center justify-center w-10 h-10">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h10m-9 4h4M9 10h.01M15 10h.01"></path></svg>
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                const cardHtml = `
+                    <div class="bg-gray-50 p-4 rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition duration-200">
+                        <div class="flex items-start justify-between mb-3 border-b pb-2">
+                            <h3 class="text-xl font-semibold text-gray-800 break-words pr-4">${book.title}</h3>
+                            <div class="flex-shrink-0 text-3xl font-extrabold text-indigo-700 p-2 bg-indigo-100 rounded-full w-10 h-10 flex items-center justify-center">
+                                ${book.id}
+                            </div>
+                        </div>
+                        ${mainContent}
+                    </div>
+                `;
+                container.innerHTML += cardHtml;
+            });
+        };
+
+        // --- Modal Control ---
+
+        /**
+         * Opens the comment modal.
+         * @param {string} title - The book title.
+         * @param {string} content - The comment content.
+         */
+        const openModal = (title, content) => {
+            document.getElementById('modal-title').textContent = `${title} Notes`;
+            document.getElementById('modal-content').textContent = content;
+            document.getElementById('comment-modal').classList.remove('hidden');
+            document.getElementById('comment-modal').classList.add('flex');
+            document.body.style.overflow = 'hidden';
+        };
+
+        /**
+         * Closes the comment modal.
+         * @param {Event} event - Optional click event to check for outside click.
+         */
+        const closeModal = (event) => {
+            if (event && event.target.id !== 'comment-modal') return; 
+            document.getElementById('comment-modal').classList.add('hidden');
+            document.getElementById('comment-modal').classList.remove('flex');
+            document.body.style.overflow = '';
+        };
+        
+        // --- Initialization ---
+
+        window.onload = () => {
+            renderSummaryDashboard();
+            renderHighlights();
+            renderLineGraph();
+            renderBookList();
+
+            // Setup search listener
+            document.getElementById('book-search').addEventListener('input', (e) => {
+                renderBookList(e.target.value);
+            });
+            
+            // Expose modal functions globally
+            window.closeModal = closeModal;
+            window.openModal = openModal;
+        };
+    </script>
+
+</body>
+</html>
